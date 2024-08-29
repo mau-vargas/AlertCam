@@ -1,5 +1,6 @@
 package com.alertcam.aplication.ui.composables
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Size
@@ -33,6 +34,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.alertcam.aplication.ml.CrimeDetectionModel
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import java.io.FileInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
 import java.util.concurrent.Executors
 
 
@@ -42,13 +51,6 @@ fun CameraPreviewScreen() {
         CameraPreviewWithAnalysis()
     }
 }
-
-
-
-
-
-
-
 
 /*
 fun test (){
@@ -93,7 +95,12 @@ fun CameraPreviewWithAnalysis() {
             mediaImage.let { image ->
                 val bitmap = mediaImage.toBitmap() // Convert Image to Bitmap
                 imageBitmap = bitmap.asImageBitmap() // Update the state
+
+                val imageByteBuffer = preprocessImage(bitmap)
+                predictions = loadModelAndPredict(context, imageByteBuffer)
             }
+
+// Preprocess image and perform inference
 
             // Preprocess image and perform inference
             //val imageByteBuffer = preprocessImage(mediaImage.toBitmap())
@@ -115,7 +122,7 @@ fun CameraPreviewWithAnalysis() {
 
     // Display the camera preview
     Column(modifier = Modifier.padding(20.dp)) {
-        AndroidView(
+    AndroidView(
             { previewView }, modifier = Modifier
                 .weight(1f)
                 .padding(16.dp)
@@ -146,4 +153,55 @@ fun ShowResults(predictions: FloatArray) {
             Text("Class $index: $prediction")
         }
     }
+}
+//###########################
+
+fun preprocessImage(bitmap: Bitmap): ByteBuffer {
+    val inputSize = 64 // Tamaño de entrada del modelo
+    val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+        .order(ByteOrder.nativeOrder())
+
+    val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+
+    // Rewind before putting data
+    byteBuffer.rewind()
+
+    for (y in 0 until inputSize) {
+        for (x in 0 until inputSize) {
+            val pixel = resizedBitmap.getPixel(x, y)
+            byteBuffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // Rojo
+            byteBuffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // Verde
+            byteBuffer.putFloat((pixel and 0xFF) / 255.0f)           // Azul
+        }
+    }
+
+    return byteBuffer
+}
+fun loadModelAndPredict(context: Context, inputBuffer: ByteBuffer): FloatArray {
+    val model = CrimeDetectionModel.newInstance(context)
+
+    // Crea el tensor de entrada con el tamaño correcto
+    val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 64, 64, 3), DataType.FLOAT32)
+    inputFeature0.loadBuffer(inputBuffer)
+
+    // Ejecuta la inferencia
+    val outputs = model.process(inputFeature0)
+    val outputFeature0 = outputs.outputFeature0AsTensorBuffer
+
+    // Obtén los resultados como un array de flotantes
+    val outputArray = outputFeature0.floatArray
+    model.close()
+
+    return outputArray
+}
+
+
+fun loadModelFile(context: Context): ByteBuffer {
+    val assetManager = context.assets
+    val fileDescriptor = assetManager.openFd("crime_detection_model.tflite")
+    val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
+    val fileChannel = inputStream.channel
+    val startOffset = fileDescriptor.startOffset
+    val declaredLength = fileDescriptor.declaredLength
+    return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
 }
