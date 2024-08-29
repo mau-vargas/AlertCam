@@ -1,98 +1,149 @@
 package com.alertcam.aplication.ui.composables
 
-import android.content.ContentValues
-import androidx.compose.runtime.Composable
-
-
-import android.content.Context
-import android.os.Build
-import android.provider.MediaStore
-import android.widget.Toast
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Size
+import androidx.activity.ComponentActivity
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
+import java.util.concurrent.Executors
+
 
 @Composable
 fun CameraPreviewScreen() {
-    val lensFacing = CameraSelector.LENS_FACING_BACK
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val context = LocalContext.current
-    val preview = Preview.Builder().build()
-    val previewView = remember {
-        PreviewView(context)
-    }
-    val cameraxSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
-    val imageCapture = remember {
-        ImageCapture.Builder().build()
-    }
-    LaunchedEffect(lensFacing) {
-        val cameraProvider = context.getCameraProvider()
-        cameraProvider.unbindAll()
-        cameraProvider.bindToLifecycle(lifecycleOwner, cameraxSelector, preview, imageCapture)
-        preview.setSurfaceProvider(previewView.surfaceProvider)
-    }
     Box(contentAlignment = Alignment.BottomCenter, modifier = Modifier.fillMaxSize()) {
-        AndroidView({ previewView }, modifier = Modifier.fillMaxSize())
-        Button(onClick = { captureImage(imageCapture, context) }) {
-            Text(text = "Capture Image")
-        }
+        CameraPreviewWithAnalysis()
     }
 }
 
-private fun captureImage(imageCapture: ImageCapture, context: Context) {
-    Toast.makeText(context, "Image Captured", Toast.LENGTH_SHORT).show()
 
-    val name = "CameraxImage.jpeg"
-    val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-        put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraX-Image")
+
+
+
+
+
+
+/*
+fun test (){
+    val model = Model.newInstance(context)
+
+// Creates inputs for reference.
+    val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 64, 64, 3), DataType.FLOAT32)
+    inputFeature0.loadBuffer(byteBuffer)
+
+// Runs model inference and gets result.
+    val outputs = model.process(inputFeature0)
+    val outputFeature0 = outputs.outputFeature0AsTensorBuffer
+
+// Releases model resources if no longer used.
+    model.close()
+
+}*/
+
+
+//###########################
+@OptIn(ExperimentalGetImage::class)
+@Composable
+fun CameraPreviewWithAnalysis() {
+    val context = LocalContext.current
+    val previewView = remember { PreviewView(context) }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    var predictions by remember { mutableStateOf<FloatArray?>(null) }
+
+
+    // State for capturing image
+    var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(Unit) {
+        val cameraProvider = ProcessCameraProvider.getInstance(context).get()
+        val preview = Preview.Builder().build()
+
+        val imageAnalyzer = ImageAnalysis.Builder().setTargetResolution(Size(1280, 720)).build()
+
+        imageAnalyzer.setAnalyzer(cameraExecutor) { imageProxy ->
+            // Process image here
+            val mediaImage = imageProxy
+            mediaImage.let { image ->
+                val bitmap = mediaImage.toBitmap() // Convert Image to Bitmap
+                imageBitmap = bitmap.asImageBitmap() // Update the state
+            }
+
+            // Preprocess image and perform inference
+            //val imageByteBuffer = preprocessImage(mediaImage.toBitmap())
+            //predictions = loadModelAndPredict(context, imageByteBuffer)
+            //classifyImage(mediaImage.toBitmap(),classifyImageTf)
+
+            imageProxy.close() // Close the image proxy when done
         }
-    }
-    val outputOptions = ImageCapture.OutputFileOptions
-        .Builder(
-            context.contentResolver,
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
+        val cameraSelector =
+            CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build()
+
+        preview.setSurfaceProvider(previewView.surfaceProvider)
+
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(
+            context as ComponentActivity, cameraSelector, preview, imageAnalyzer
         )
-        .build()
-    imageCapture.takePicture(
-        outputOptions,
-        ContextCompat.getMainExecutor(context),
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                println("Successs")
-            }
+    }
 
-            override fun onError(exception: ImageCaptureException) {
-                println("Failed $exception")
-            }
-
-        })
-}
-private suspend fun Context.getCameraProvider(): ProcessCameraProvider =
-    suspendCoroutine { continuation ->
-        ProcessCameraProvider.getInstance(this).also { cameraProvider ->
-            cameraProvider.addListener({
-                continuation.resume(cameraProvider.get())
-            }, ContextCompat.getMainExecutor(this))
+    // Display the camera preview
+    Column(modifier = Modifier.padding(20.dp)) {
+        AndroidView(
+            { previewView }, modifier = Modifier
+                .weight(1f)
+                .padding(16.dp)
+        )
+       imageBitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = "Captured Image",
+                modifier = Modifier
+                    .size(200.dp)
+                    .padding(16.dp)
+                    .graphicsLayer(
+                        rotationZ = 90f // Ángulo de rotación en grados
+                    )
+            )
+        }
+        predictions?.let {
+            ShowResults(predictions = it)
         }
     }
+}
+
+@Composable
+fun ShowResults(predictions: FloatArray) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Predictions:")
+        predictions.forEachIndexed { index, prediction ->
+            Text("Class $index: $prediction")
+        }
+    }
+}

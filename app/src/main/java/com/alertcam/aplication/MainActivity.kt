@@ -22,6 +22,12 @@ import com.alertcam.aplication.ui.theme.AlertCamTheme
 import androidx.activity.compose.setContent
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val INPUT_SIZE = 64
+        const val OUTPUT_SIZE = 3 // Número de etiquetas de salida
+    }
+
+    val classes = arrayOf("IRON","PELOTICA","NORMAL")
 
     private val cameraPermissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
