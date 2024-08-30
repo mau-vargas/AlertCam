@@ -100,13 +100,6 @@ fun CameraPreviewWithAnalysis() {
                 predictions = loadModelAndPredict(context, imageByteBuffer)
             }
 
-// Preprocess image and perform inference
-
-            // Preprocess image and perform inference
-            //val imageByteBuffer = preprocessImage(mediaImage.toBitmap())
-            //predictions = loadModelAndPredict(context, imageByteBuffer)
-            //classifyImage(mediaImage.toBitmap(),classifyImageTf)
-
             imageProxy.close() // Close the image proxy when done
         }
         val cameraSelector =
@@ -154,6 +147,16 @@ fun ShowResults(predictions: FloatArray) {
         }
     }
 }
+
+@Composable
+fun ShowResults(predictions: List<Pair<String, Float>>) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Predictions:")
+        predictions.forEach { (label, confidence) ->
+            Text("$label: ${"%.2f".format(confidence)}")
+        }
+    }
+}
 //###########################
 
 fun preprocessImage(bitmap: Bitmap): ByteBuffer {
@@ -196,12 +199,3 @@ fun loadModelAndPredict(context: Context, inputBuffer: ByteBuffer): FloatArray {
 }
 
 
-fun loadModelFile(context: Context): ByteBuffer {
-    val assetManager = context.assets
-    val fileDescriptor = assetManager.openFd("crime_detection_model.tflite")
-    val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-    val fileChannel = inputStream.channel
-    val startOffset = fileDescriptor.startOffset
-    val declaredLength = fileDescriptor.declaredLength
-    return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-}
